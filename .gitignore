@@ -1,0 +1,27 @@
+.DS_Store
+__pycache__/
+**/__pycache__/
+*.pyc
+
+# documents (keep locally, don't commit by default)
+*.pdf
+
+# secrets / local config
+.env
+**/.env
+**/.env.*
+
+# local environments
+.venv/
+.python-version
+
+# editor / IDE
+.idea/
+.vscode/
+.cursor/
+
+# generated outputs
+Financial-MCP-Agent/logs/
+Financial-MCP-Agent/reports/
+*.log
+
