@@ -38,16 +38,31 @@
 - **LangGraph**：像“流程编排器”。规定多个 Agent 怎么并行、怎么汇聚、怎么结束。
 - **ReAct**：一种常用的 Agent 工作方式：先“想”（Reasoning），再“做”（Act，调用工具），反复直到得到答案。
 
+### 4.1 ReAct 与 Agent 搭建（回答“是封装好的吗、还有别的模式吗”）
+
+- **流程**：先创建 LLM 实例，再拿到 MCP 工具列表，然后 `create_react_agent(llm, mcp_tools)` 就把“大模型 + 工具”绑在一起，形成“思考 → 决定是否调工具 → 拿到结果再思考”的循环。是的，**ReAct 模式在本项目里是封装好的**（LangGraph 的 `create_react_agent`），不需要自己写循环。
+- **是否只有 ReAct**：不是。LangGraph 里可以自己用 `StateGraph` 手写“先调工具再调 LLM”的节点和边，或者用别的库（如 LangChain 的 AgentExecutor、AutoGPT 式规划等）。ReAct 只是最常用、最易上手的一种“推理+行动”模式。
+- **面试可答**：我们用的是 LangGraph 的 ReAct 预构建 Agent，把 LLM 和 MCP 工具绑在一起，由模型自主决定何时调哪个工具、调几次，直到得出分析结论。
+
+### 4.2 MCP 在本项目里的角色（谁才是 Server、谁在注册、谁在实现）
+
+- **一句话**：`a-share-mcp-is-just-i-need` 是**我们自己建的 MCP 服务器**，不是用网上现成的 MCP 服务；工具也是我们自己在服务器里注册和实现的。
+- **具体分层**：
+  - **MCP 服务器（我们自己的）**：项目 `a-share-mcp-is-just-i-need`，入口 `mcp_server.py`，用 FastMCP 起一个进程，用 stdio 和客户端通信。
+  - **在服务器里“注册”工具**：`src/tools/news_crawler.py` 里用 `@app.tool()` 把 `crawl_news` 注册到这台 MCP 服务器上，所以这里是**在咱们自己的 MCP 服务器上注册工具**，不是用网上现成的 MCP 工具。
+  - **工具的具体实现**：`baostock_data_source.py` 里的 `crawl_news()` 是**工具的真实逻辑**（爬百度新闻、解析、调情感/风险模型等），跑在 MCP 服务器进程里，是**服务端、本地实现**。`news_crawler.py` 里的 `crawl_news` 只是薄薄一层，内部调 `data_source.crawl_news(query, top_k)`。
+  - **MCP 客户端**：`Financial-MCP-Agent` 里的 `mcp_client.py` 通过 `MultiServerMCPClient` 连到上面的 MCP 服务器，拿到“工具列表”，再交给 LangGraph 的 ReAct Agent 去调用。所以 Agent 侧是**调用方（客户端）**，不关心工具内部是爬虫还是查库。
+- **面试怎么说**：我们自己做了一个 A 股 MCP 服务器，把行情、财报、新闻爬虫等封装成工具并在服务器里注册；Agent 端通过 MCP 协议连上这台服务器，拿到工具列表再按需调用。**工具内部怎么实现**（例如 crawl_news 里怎么爬百度、怎么调情感模型）可以一句带过；**面试更关注**你为什么用 MCP、谁当 Server 谁当 Client、怎么用 MCP 把“大模型”和“数据能力”接在一起，而不是逐行讲爬虫代码。
+
 ## 5. 面试高频问题（问题 → 对应代码 → 我的回答）
 
 > 我会把你 PDF 里的问题逐条映射到文件与函数上，保证你能“指着代码解释”。
 
 - Q1：新闻分析 Agent 的数据来源是什么？
-  - 对应代码：`a-share-mcp-is-just-i-need/src/tools/news_crawler.py`（新闻抓取工具注册与实现）
-  - 进一步定位：`a-share-mcp-is-just-i-need/src/baostock_data_source.py` 的 `crawl_news()`（具体爬取实现）
-  - 我的回答（待补全）：
-    - **线上运行时（本项目实际爬取）**：通过 `crawl_news` 工具走 `BaostockDataSource.crawl_news()`，用“百度新闻搜索”抓取标题/摘要/链接，再尝试抓正文内容（抓不到就退化为摘要）。
-    - **离线训练时（简历/面试材料里那套 10 万新闻数据）**：常见说法是从东方财富/新浪财经/证券时报/第一财经等站点采集并做去重与标注，用来训练新闻情感/风险小模型；这套“训练集来源”与“线上爬虫实时来源”不是一回事，面试时要先澄清你在回答哪个口径。
+  - 对应代码：`a-share-mcp-is-just-i-need/src/tools/news_crawler.py`（新闻抓取工具注册）、`a-share-mcp-is-just-i-need/src/baostock_data_source.py` 的 `crawl_news()`（具体爬取实现）
+  - **我的概括（人话）**：新闻里显示资金大量流出，情感偏负，建议短期观望，同时要结合公司基本面综合判断。
+  - **面试版标准回答**：新闻分析的数据来自我们封装的 MCP 工具 `crawl_news`，线上实时来源是百度新闻搜索，抓取与公司相关的标题、摘要和链接，部分会抓正文；情感和风险分数由我们本地微调的小模型（或规则）给出。报告里会根据资金流向、情感和风险给出短期观望或结合基本面再决策的建议。
+  - **口径区分**：若问“训练情感/风险模型的数据从哪来”，答东方财富/新浪/证券时报/第一财经等采集并标注的那套离线数据集，与线上爬虫是两套口径。
 
 ## 6. 我遇到的坑与解决（按时间记录）
 
