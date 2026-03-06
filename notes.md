@@ -64,6 +64,14 @@
   - **面试版标准回答**：新闻分析的数据来自我们封装的 MCP 工具 `crawl_news`，线上实时来源是百度新闻搜索，抓取与公司相关的标题、摘要和链接，部分会抓正文；情感和风险分数由我们本地微调的小模型（或规则）给出。报告里会根据资金流向、情感和风险给出短期观望或结合基本面再决策的建议。
   - **口径区分**：若问“训练情感/风险模型的数据从哪来”，答东方财富/新浪/证券时报/第一财经等采集并标注的那套离线数据集，与线上爬虫是两套口径。
 
+- Q2：`create_react_agent(llm, tools)` 到底带来什么能力？
+  - **我的理解（人话）**：让大模型先“想”要用什么工具，通过工具拿到外部数据，再对数据进行分析；是一种“思考 → 行动 → 再思考 → 再行动”的循环。
+  - **面试版标准回答**：`create_react_agent` 把 LLM 和工具列表绑在一起，赋予模型两种能力：一是**自主决定**调用哪个工具、传什么参数、调用几次；二是**基于工具返回的真实数据**继续推理和总结，而不是凭空编造。本质是实现了 ReAct 的“推理—行动”循环：先根据任务做推理，再调用工具获取数据，再根据数据继续推理，直到得出最终结论。对应代码在 `Financial-MCP-Agent/src/agents/news_agent.py`（以及 fundamental/technical/value_agent.py）里：先 `ChatOpenAI` + `get_mcp_tools()`，再 `create_react_agent(llm, mcp_tools)`，最后 `agent.ainvoke(...)`。
+
+- Q3：MCP Server / Client 在本项目里分别是哪几个文件？
+  - **我的理解（人话）**：MCP Server 在 a-share-mcp-is-just-i-need 里注册工具；Client 在 Financial-MCP-Agent 里连上服务器拿到工具列表，交给大模型决定用哪些工具。
+  - **面试版标准回答**：**MCP Server** 的入口是 `a-share-mcp-is-just-i-need/mcp_server.py`：在这里用 FastMCP 创建 app，并调用各模块的 `register_xxx_tools(app, data_source)` 把行情、财报、新闻爬虫等工具注册到服务器上；工具的具体实现分布在同项目下的 `src/tools/`（如 `news_crawler.py`）和 `src/baostock_data_source.py`。**MCP Client** 在 `Financial-MCP-Agent/src/tools/mcp_client.py`：通过 `MultiServerMCPClient(SERVER_CONFIGS)` 连接配置好的 MCP 服务器，用 `get_tools()` 拉取工具列表并缓存在内存中，供各个 Agent 的 `create_react_agent(llm, mcp_tools)` 使用；大模型在推理过程中按需决定调用哪些工具、传什么参数。
+
 ## 6. 我遇到的坑与解决（按时间记录）
 
 - （待记录）
